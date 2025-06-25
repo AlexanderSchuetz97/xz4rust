@@ -56,6 +56,7 @@ mod vli;
 /// xz delta filter decoder
 #[cfg(feature = "delta")]
 mod delta;
+mod encoder;
 
 // These are all types that are needed to use this crate to decode some xz files.
 #[cfg(feature = "std")]
