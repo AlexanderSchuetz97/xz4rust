@@ -398,6 +398,7 @@ impl XzLzma2Decoder {
                     };
 
                     if tmp == 0 {
+                        self.sequence = LzmaStreamState::Finished;
                         return Ok(DecodeResult::EndOfDataStructure);
                     }
 
@@ -526,6 +527,9 @@ impl XzLzma2Decoder {
                         return Ok(DecodeResult::NeedMoreData);
                     }
                     self.sequence = LzmaStreamState::Control;
+                }
+                LzmaStreamState::Finished => {
+                    return Ok(DecodeResult::EndOfDataStructure);
                 }
             }
         }
@@ -1081,6 +1085,8 @@ enum LzmaStreamState {
     LzmaPrepare = 6,
     LzmaRun = 7,
     Copy = 8,
+    /// LZMA2 end marker was consumed.
+    Finished = 9,
 }
 
 /// Buffer used by the range decoder.
@@ -2031,6 +2037,19 @@ impl<const T: usize> XzStaticDecoder<T> {
         result
     }
 
+    /// Returns whether a complete LZMA2 chunk has ended.
+    ///
+    /// When true, the decoder is before the next LZMA2 control byte
+    /// and has no compressed input buffered internally.
+    ///
+    /// This does not indicate why the chunk ended, XZ stream
+    /// completion or check validation, or that all filtered output
+    /// has been returned.
+    #[must_use]
+    pub const fn is_lzma2_chunk_boundary(&self) -> bool {
+        self.inner.is_lzma2_chunk_boundary()
+    }
+
     /// Reset the decoder
     pub const fn reset(&mut self) {
         self.inner.reset();
@@ -2190,6 +2209,19 @@ impl<'a> XzDecoder<'a> {
             .decode(input_data, output_data, &mut self.dictionary_buffer)
     }
 
+    /// Returns whether a complete LZMA2 chunk has ended.
+    ///
+    /// When true, the decoder is before the next LZMA2 control byte
+    /// and has no compressed input buffered internally.
+    ///
+    /// This does not indicate why the chunk ended, XZ stream
+    /// completion or check validation, or that all filtered output
+    /// has been returned.
+    #[must_use]
+    pub const fn is_lzma2_chunk_boundary(&self) -> bool {
+        self.inner.is_lzma2_chunk_boundary()
+    }
+
     /// Reset the decoder
     pub const fn reset(&mut self) {
         self.inner.reset();
@@ -2310,6 +2342,15 @@ impl XzInnerDecoder {
             delta2: DeltaDecoder::new(),
             filter_chain: [Filter::Empty; 3],
         }
+    }
+
+    /// Returns whether the LZMA2 decoder is between chunks.
+    const fn is_lzma2_chunk_boundary(&self) -> bool {
+        !self.needs_reset
+            && matches!(self.state, XzDecoderState::BlockUncompress)
+            && matches!(self.lzma2.sequence, LzmaStreamState::Control)
+            && !self.lzma2.need_dict_reset
+            && self.lzma2.temp_size == 0
     }
 
     /// Updates the size and crc32 of the index.
