@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::num::NonZeroUsize;
-use xz4rust::{XzDecoder, XzError, XzReader, DICT_SIZE_MAX};
+use xz4rust::{XzDecoder, XzError, XzReader};
 
 #[test]
 pub fn dict2big() {
@@ -26,7 +26,7 @@ pub fn dict_trunc() {
     let mut r = XzReader::new_with_buffer_size_and_decoder(
         input.as_slice(),
         NonZeroUsize::new(4096).unwrap(),
-        XzDecoder::in_heap_with_alloc_dict(vec![0u8; DICT_SIZE_MAX + 1], 4096),
+        XzDecoder::in_heap_with_alloc_dict(vec![0u8; xz4rust::DICT_SIZE_MAX + 1], 4096),
     );
     let mut m = Vec::new();
     _ = r.read_to_end(&mut m);

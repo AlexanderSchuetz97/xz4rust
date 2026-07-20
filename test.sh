@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -e
+
+#Valgrind
+cargo clean
+# This cannot be done with newer versions of rust because there are memory leaks in the standard library that the maintainers refuse to fix.
+rustup default 1.84.1
+export VALGRINDFLAGS="--error-exitcode=1 --leak-check=full --show-leak-kinds=all"
+cargo valgrind test --package xz4rust --test tiny_stack test_tiny_stack -- --exact
+cargo clean
+
 rustup default stable
+cargo msrv verify
 
 # 64 bit little endian
 cross test --target x86_64-unknown-linux-gnu
@@ -34,10 +44,6 @@ cargo +nightly miri test --package xz4rust --test test_static_uninit test_static
 
 # Verify minimum rust version works
 cargo msrv verify
-
-#Valgrind
-export VALGRINDFLAGS="--error-exitcode=1 --leak-check=full --show-leak-kinds=all"
-cargo valgrind test --package xz4rust --test tiny_stack test_tiny_stack -- --exact
 
 # Clippy checks and checks if it compiles in some combinations
 /usr/bin/env bash clippy.sh

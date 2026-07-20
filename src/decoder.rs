@@ -1830,13 +1830,13 @@ impl Display for XzError {
                 f.write_fmt(format_args!("UnsupportedLzmaProperties(size={size} bytes)"))
             }
             Self::UnsupportedCheckType(typ) => {
-                f.write_fmt(format_args!("UnsupportedCheckType(type={typ})",))
+                f.write_fmt(format_args!("UnsupportedCheckType(type={typ})"))
             }
             #[cfg(feature = "bcj")]
             Self::BcjFilterWithOffsetNotSupported => f.write_str("BcjFilterWithOffsetNotSupported"),
             #[cfg(feature = "bcj")]
             Self::UnsupportedBcjFilter(flt) => {
-                f.write_fmt(format_args!("UnsupportedBcjFilter(type={flt})",))
+                f.write_fmt(format_args!("UnsupportedBcjFilter(type={flt})"))
             }
             #[cfg(not(feature = "delta"))]
             Self::DeltaFilterUnsupported => f.write_str("DeltaFilterUnsupported"),
@@ -3203,6 +3203,7 @@ pub enum XzDecoderIndexSequence {
     Uncompressed,
 }
 
+/// Index decoder
 #[derive(Clone, Default, Debug)]
 struct XzDecoderIndex {
     /// state machine state
