@@ -268,8 +268,8 @@ I recommend sourcing them from the xz-utils git repo directly.
 
 ## Tests
 This implementation can decode all test files from the xz-repo that xz-embedded can also decode.
-The only test files that cannot be decoded are those requiring the delta filter or use a custom offset address for a BCJ filter.
-Both of which is not implemented in the native xz-embedded.
+The only test files that cannot be decoded are those requiring a custom offset address for a BCJ filter.
+This is currently not implemented in the native xz-embedded either.
 
 ## Unsafe code
 This crate features two optional unsafe blocks. Both are only related to allocation of the memory for the
