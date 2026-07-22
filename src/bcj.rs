@@ -9,6 +9,8 @@ pub struct BcjFilterState {
     bcj_filter_type: BcjFilter,
     /// flag if the next filter (probably the lzma decoder) is done.
     pub next_filter_done: bool,
+    /// offset to use when processing BCJ filters.
+    offset: u32,
     /// position marker that bcj filters use during filtering.
     pub pos: u32,
     /// special mask marker by the x86 bcj filter. Unused by all other filters.
@@ -27,6 +29,7 @@ impl BcjFilterState {
         Self {
             bcj_filter_type: BcjFilter::X86,
             next_filter_done: false,
+            offset: 0,
             pos: 0,
             x86_prev_mask: 0,
             filtered: 0,
@@ -48,10 +51,11 @@ impl BcjFilterState {
     /// Resets/Initializes the filter for the given filter type directly from the xz stream header.
     /// # Errors
     /// if the filter type with the given id is not supported by the implementation.
-    pub fn reset(&mut self, id: u8) -> Result<(), XzError> {
+    pub fn reset(&mut self, id: u8, offset: u32) -> Result<(), XzError> {
         self.bcj_filter_type = BcjFilter::try_from(id)?;
         self.next_filter_done = false;
         self.pos = 0;
+        self.offset = offset;
         self.x86_prev_mask = 0;
         self.filtered = 0;
         self.size = 0;
@@ -158,17 +162,17 @@ impl BcjFilterState {
 
         let filtered = match self.bcj_filter_type {
             BcjFilter::X86 => {
-                let (flt, mask) = bcj_x86(self.pos, sl_buf, self.x86_prev_mask);
+                let (flt, mask) = bcj_x86(self.pos, self.offset, sl_buf, self.x86_prev_mask);
                 self.x86_prev_mask = mask;
                 flt
             }
-            BcjFilter::PowerPc => bcj_powerpc(self.pos, sl_buf),
-            BcjFilter::IntelIthanium64 => bcj_ia64(self.pos, sl_buf),
-            BcjFilter::Arm => bcj_arm(self.pos, sl_buf),
-            BcjFilter::ArmThumb => bcj_armthumb(self.pos, sl_buf),
-            BcjFilter::Sparc => bcj_sparc(self.pos, sl_buf),
-            BcjFilter::Arm64 => bcj_arm64(self.pos, sl_buf),
-            BcjFilter::RiscV => bcj_riscv(self.pos, sl_buf),
+            BcjFilter::PowerPc => bcj_powerpc(self.pos, self.offset, sl_buf),
+            BcjFilter::IntelIthanium64 => bcj_ia64(self.pos, self.offset, sl_buf),
+            BcjFilter::Arm => bcj_arm(self.pos, self.offset, sl_buf),
+            BcjFilter::ArmThumb => bcj_armthumb(self.pos, self.offset, sl_buf),
+            BcjFilter::Sparc => bcj_sparc(self.pos, self.offset, sl_buf),
+            BcjFilter::Arm64 => bcj_arm64(self.pos, self.offset, sl_buf),
+            BcjFilter::RiscV => bcj_riscv(self.pos, self.offset, sl_buf),
         };
         pos = pos.wrapping_add(filtered);
 
@@ -185,7 +189,7 @@ const fn bcj_x86_test_msbyte(b: u8) -> bool {
 }
 
 /// runs the x86 bcj filter (filtered, mask)
-fn bcj_x86(s_pos: u32, buf: &mut [u8], mask: usize) -> (usize, usize) {
+fn bcj_x86(s_pos: u32, offset: u32, buf: &mut [u8], mask: usize) -> (usize, usize) {
     static MASK_TO_ALLOWED_STATUS: [bool; 8] = [true, true, true, false, true, false, false, false];
     static MASK_TO_BIT_NUM: [usize; 8] = [0, 1, 2, 2, 3, 3, 3, 3];
     let mut position: usize = 0;
@@ -233,6 +237,7 @@ fn bcj_x86(s_pos: u32, buf: &mut [u8], mask: usize) -> (usize, usize) {
             loop {
                 dest = src.wrapping_sub(
                     s_pos
+                        .wrapping_add(offset)
                         .wrapping_add(clamp_us_to_u32(position))
                         .wrapping_add(5),
                 );
@@ -269,14 +274,14 @@ fn bcj_x86(s_pos: u32, buf: &mut [u8], mask: usize) -> (usize, usize) {
 }
 
 /// runs the powerpc bcj filter
-fn bcj_powerpc(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_powerpc(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     let mut i: usize = 0;
     let size = buf.len() as u64 & !(3i32 as u64);
     while (i as u64) < size {
         let mut instr = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
         if instr & 0xfc00_0003 == 0x4800_0001 {
             instr &= 0x03ff_fffc;
-            instr = instr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)));
+            instr = instr.wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)));
             instr &= 0x03ff_fffc;
             instr |= 0x4800_0001;
             let as_be = u32::to_be_bytes(instr);
@@ -291,7 +296,7 @@ fn bcj_powerpc(s_pos: u32, buf: &mut [u8]) -> usize {
 }
 
 /// runs the ia64 bcj filter
-fn bcj_ia64(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_ia64(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     static BRANCH_TABLE: [u8; 32] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 6, 6, 0, 0, 7, 7, 4, 4, 0, 0, 4, 4,
         0, 0,
@@ -328,7 +333,7 @@ fn bcj_ia64(s_pos: u32, buf: &mut [u8]) -> usize {
             let mut addr = clamp_u64_to_u32(norm >> 13 & 0xfffff);
             addr |= ((norm >> 36) as u32 & 1) << 20;
             addr <<= 4;
-            addr = addr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)));
+            addr = addr.wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)));
             addr >>= 4;
             norm &= !((0x008f_ffff) << 13);
             norm |= u64::from(addr & 0x000f_ffff) << 13;
@@ -350,7 +355,7 @@ fn bcj_ia64(s_pos: u32, buf: &mut [u8]) -> usize {
 }
 
 /// runs the arm bcj filter
-fn bcj_arm(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_arm(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     let mut i = 0;
     let size = buf.len() & !3;
     while i < size {
@@ -360,7 +365,12 @@ fn bcj_arm(s_pos: u32, buf: &mut [u8]) -> usize {
                 | u32::from(buf[i.wrapping_add(2)]) << 16;
 
             addr <<= 2;
-            addr = addr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)).wrapping_add(8));
+            addr = addr.wrapping_sub(
+                s_pos
+                    .wrapping_add(offset)
+                    .wrapping_add(clamp_us_to_u32(i))
+                    .wrapping_add(8),
+            );
             addr >>= 2;
             buf[i] = clamp_u32_to_u8(addr);
             buf[i.wrapping_add(1)] = clamp_u32_to_u8(addr >> 8);
@@ -372,7 +382,7 @@ fn bcj_arm(s_pos: u32, buf: &mut [u8]) -> usize {
 }
 
 /// runs the armthumb bcj filter
-fn bcj_armthumb(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_armthumb(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     let mut i: usize = 0;
     if buf.len() < 4 {
         return 0;
@@ -390,7 +400,12 @@ fn bcj_armthumb(s_pos: u32, buf: &mut [u8]) -> usize {
             | u32::from(buf[i + 2]);
 
         addr <<= 1;
-        addr = addr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)).wrapping_add(4));
+        addr = addr.wrapping_sub(
+            s_pos
+                .wrapping_add(offset)
+                .wrapping_add(clamp_us_to_u32(i))
+                .wrapping_add(4),
+        );
         addr >>= 1;
         buf[i + 1] = clamp_u32_to_u8(0xf0 | addr >> 19 & 0x7);
         buf[i] = clamp_u32_to_u8(addr >> 11);
@@ -402,14 +417,14 @@ fn bcj_armthumb(s_pos: u32, buf: &mut [u8]) -> usize {
 }
 
 /// runs the sparc bcj filter
-fn bcj_sparc(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_sparc(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     let mut i: usize = 0;
     let size = buf.len() & !3;
     while i < size {
         let mut instr = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
         if instr >> 22 == 0x100 || instr >> 22 == 0x1ff {
             instr <<= 2;
-            instr = instr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)));
+            instr = instr.wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)));
             instr >>= 2;
             instr = 0x4000_0000u32.wrapping_sub(instr & 0x0040_0000)
                 | 0x4000_0000
@@ -422,13 +437,14 @@ fn bcj_sparc(s_pos: u32, buf: &mut [u8]) -> usize {
 }
 
 /// runs the arm64 bcj filter
-fn bcj_arm64(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_arm64(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     let mut i: usize = 0;
     let size = buf.len() & !15;
     while i < size {
         let mut instr = u32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
         if instr >> 26i32 == 0x25i32 as u32 {
-            let addr = instr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)) >> 2i32);
+            let addr = instr
+                .wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)) >> 2i32);
             instr = 0x9400_0000 | addr & 0x03ff_ffff;
             buf[i..i + 4].copy_from_slice(instr.to_le_bytes().as_slice());
             i += 4;
@@ -442,7 +458,8 @@ fn bcj_arm64(s_pos: u32, buf: &mut [u8]) -> usize {
 
         let mut addr = instr >> 29 & 3 | instr >> 3i32 & 0x001f_fffc;
         if addr.wrapping_add(0x20000) & 0x001c_0000 == 0 {
-            addr = addr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)) >> 12i32);
+            addr = addr
+                .wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)) >> 12i32);
             instr &= 0x9000_001f;
             instr |= (addr & 3) << 29i32;
             instr |= (addr & 0x3fffc) << 3i32;
@@ -455,7 +472,7 @@ fn bcj_arm64(s_pos: u32, buf: &mut [u8]) -> usize {
     i
 }
 /// runs the riscv bcj filter
-fn bcj_riscv(s_pos: u32, buf: &mut [u8]) -> usize {
+fn bcj_riscv(s_pos: u32, offset: u32, buf: &mut [u8]) -> usize {
     let mut i: usize = 0;
     let mut instr2: u32;
     let mut instr2_rs1: u32;
@@ -478,7 +495,7 @@ fn bcj_riscv(s_pos: u32, buf: &mut [u8]) -> usize {
             let b2 = u32::from(buf[i + 2]);
             let b3 = u32::from(buf[i + 3]);
             addr = (b1 & 0xf0i32 as u32) << 13i32 | b2 << 9i32 | b3 << 1i32;
-            addr = addr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)));
+            addr = addr.wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)));
             buf[i + 1] = clamp_u32_to_u8(b1 & 0xf | addr >> 8 & 0xf0);
 
             buf[i + 2] = clamp_u32_to_u8(addr >> 16 & 0xf | addr >> 7 & 0x10 | addr << 4 & 0xe0);
@@ -520,7 +537,7 @@ fn bcj_riscv(s_pos: u32, buf: &mut [u8]) -> usize {
         }
 
         addr = u32::from_be_bytes([buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7]]);
-        addr = addr.wrapping_sub(s_pos.wrapping_add(clamp_us_to_u32(i)));
+        addr = addr.wrapping_sub(s_pos.wrapping_add(offset).wrapping_add(clamp_us_to_u32(i)));
         instr2 = instr >> 12 | addr << 20;
         instr = 0x17 | instr2_rs1 << 7 | addr.wrapping_add(0x800) & 0xffff_f000;
 

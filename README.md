@@ -267,9 +267,18 @@ If you are looking to re-use or redistribute only those test files then
 I recommend sourcing them from the xz-utils git repo directly.
 
 ## Tests
-This implementation can decode all test files from the xz-repo that xz-embedded can also decode.
-The only test files that cannot be decoded are those requiring a custom offset address for a BCJ filter.
-This is currently not implemented in the native xz-embedded either.
+This implementation can decode all test files from the xz-repo.
+In addition to those test files various tests on random data as well as some 
+"real" files are also conducted. 
+
+Every code branch that is not hit by a test is marked with a "TODO unreached" comment in the code.
+There are not many, and they are in rather obscure paths of the code.
+Examples of such unreached code paths:
+* Non trivially reachable error handling when block/file headers contain invalid data
+* Parts of the riscv bcj filter
+
+If you have a test file (and or in/out buffer sizes) that causes those to be hit then sharing those files via GitHub issue 
+would be very much appreciated.
 
 ## Unsafe code
 This crate features two optional unsafe blocks. Both are only related to allocation of the memory for the
@@ -327,6 +336,5 @@ This crate will emit a compiler error for such targets.
 
 ## Future work
 * Finish refactoring existing code.
-* Implement offsets for the BCJ filters.
 * Optimize the current implementation using perf.
 * Port/Implement an XZ Encoder. (A lot of work that I currently do not need myself...)

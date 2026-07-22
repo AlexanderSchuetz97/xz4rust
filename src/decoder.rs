@@ -1770,7 +1770,10 @@ pub enum XzError {
     UnsupportedLzmaProperties(u32),
     DictionaryTooLarge(u64),
     UnsupportedCheckType(u32),
+    /// Will never be returned anymore because
+    /// BCJ filters with offset are now supported. Will be removed in the next major release
     #[cfg(feature = "bcj")]
+    #[deprecated]
     BcjFilterWithOffsetNotSupported,
     #[cfg(feature = "bcj")]
     UnsupportedBcjFilter(u32),
@@ -1833,6 +1836,7 @@ impl Display for XzError {
                 f.write_fmt(format_args!("UnsupportedCheckType(type={typ})"))
             }
             #[cfg(feature = "bcj")]
+            #[expect(deprecated)]
             Self::BcjFilterWithOffsetNotSupported => f.write_str("BcjFilterWithOffsetNotSupported"),
             #[cfg(feature = "bcj")]
             Self::UnsupportedBcjFilter(flt) => {
@@ -2496,7 +2500,7 @@ impl XzInnerDecoder {
                         //TODO unreached.
                         return Err(XzError::BlockHeaderTooSmall);
                     }
-                    let filter = buf[pos];
+                    let filter_id = buf[pos];
                     pos += 1;
                     let bcj_filter = match i {
                         0 => &mut self.bcj0,
@@ -2504,12 +2508,38 @@ impl XzInnerDecoder {
                         2 => &mut self.bcj2,
                         _ => unreachable!(),
                     };
-                    bcj_filter.reset(filter)?;
 
-                    if buf[pos] != 0 {
-                        return Err(XzError::BcjFilterWithOffsetNotSupported);
+                    let offset_size = buf[pos];
+
+                    if offset_size == 0 {
+                        // No bcj offset
+                        pos += 1;
+                        bcj_filter.reset(filter_id, 0)?;
+                        continue;
                     }
-                    pos += 1;
+
+                    if offset_size != 4 {
+                        //Offsets that are not 4 byte not supported.
+                        return Err(XzError::UnsupportedBlockHeaderOption);
+                    }
+
+                    // Offset is present, 32 bit le. In theory should be nonzero.
+                    if self.temp.size.wrapping_sub(pos) < 5 {
+                        //TODO unreached.
+                        return Err(XzError::BlockHeaderTooSmall);
+                    }
+
+                    bcj_filter.reset(
+                        filter_id,
+                        u32::from_le_bytes([
+                            buf[pos + 1],
+                            buf[pos + 2],
+                            buf[pos + 3],
+                            buf[pos + 4],
+                        ]),
+                    )?;
+
+                    pos += 5;
                     continue;
                 }
             }

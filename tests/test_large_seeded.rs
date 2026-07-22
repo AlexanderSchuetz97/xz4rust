@@ -26,6 +26,9 @@ fn gen_test_files(iter: u64, a: Vec<&str>) -> (String, String) {
     }
 
     if !fs::exists(&base_file).unwrap() {
+        if !fs::exists("generated_testfiles").unwrap() {
+            _ = fs::create_dir_all("generated_testfiles");
+        }
         let mut cnt = 0u64;
         let mut seed = [69; 32];
         let mut file = BufWriter::new(File::create(&base_file).unwrap());
@@ -222,6 +225,44 @@ pub fn test_powerpc() {
 
 #[test]
 pub fn test_riscv() {
-    //riscv not part of debian 12 xz package.
-    //test_large_seeded(vec!["--riscv", "--lzma2"]);
+    test_large_seeded(vec!["--riscv", "--lzma2"]);
+}
+
+#[test]
+pub fn test_arm_offset() {
+    test_large_seeded(vec!["--arm=start=124", "--lzma2"]);
+}
+#[test]
+pub fn test_sparc_offset() {
+    test_large_seeded(vec!["--sparc=start=124", "--lzma2"]);
+}
+
+#[test]
+pub fn test_ia64_offset() {
+    test_large_seeded(vec!["--ia64=start=64", "--lzma2"]);
+}
+
+#[test]
+pub fn test_x86_offset() {
+    test_large_seeded(vec!["--x86=start=124", "--lzma2"]);
+}
+
+#[test]
+pub fn test_armthumb_offset() {
+    test_large_seeded(vec!["--armthumb=start=124", "--lzma2"]);
+}
+
+#[test]
+pub fn test_arm64_offset() {
+    test_large_seeded(vec!["--arm64=start=124", "--lzma2"]);
+}
+
+#[test]
+pub fn test_powerpc_offset() {
+    test_large_seeded(vec!["--powerpc=start=124", "--lzma2"]);
+}
+
+#[test]
+pub fn test_riscv_offset() {
+    test_large_seeded(vec!["--riscv=start=124", "--lzma2"]);
 }

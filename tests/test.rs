@@ -187,11 +187,10 @@ fn t7() {
 
 #[test]
 fn t8() {
-    run_test_expect_error(
+    run_test2(
         include_bytes!("../test_files/good-1-arm64-lzma2-2.xz"),
-        |err| assert_eq!(err, XzError::BcjFilterWithOffsetNotSupported),
+        include_bytes!("../test_files/good-1-arm64-lzma2-2"),
     );
-    //Custom start offset not supported
 }
 
 #[test]
@@ -693,5 +692,29 @@ fn t56() {
     run_test_expect_error(
         include_bytes!("../test_files/bad-lzma-properties-too-large.xz"),
         |e| assert_eq!(e, XzError::LzmaPropertiesTooLarge),
+    );
+}
+
+#[test]
+fn t57() {
+    run_test2(
+        include_bytes!("../test_files/java_native_utils_amd64.so3.xz"),
+        include_bytes!("../test_files/java_native_utils_amd64.so"),
+    );
+}
+
+#[test]
+fn t58() {
+    run_test2(
+        include_bytes!("../test_files/java_native_utils_armel.so2.xz"),
+        include_bytes!("../test_files/java_native_utils_armel.so"),
+    );
+}
+
+#[test]
+fn t59() {
+    run_test2(
+        include_bytes!("../test_files/java_native_utils_riscv64.so2.xz"),
+        include_bytes!("../test_files/java_native_utils_riscv64.so"),
     );
 }
