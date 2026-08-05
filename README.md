@@ -1,3 +1,6 @@
+# Repo was moved to Codeberg
+https://codeberg.org/AlexanderSchuetz97/xz4rust
+
 # xz4rust
 Memory safe pure Rust no-std & no alloc XZ decoder
 
